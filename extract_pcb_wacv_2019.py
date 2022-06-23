@@ -12,6 +12,12 @@ unwantedComps = ["text", "pins", "pads", "unknown", "switch", "test"]
 wantedComps = ["resistor", "capacitor", "inductor", "diode", "led", "ic", "transistor", "connector", "jumper", "emi_filter",  "button", "clock", "transformer", "potentiometer", "heatsink", "fuse", "ferrite_bead", "buzzer", "display", "battery"]
 frequency_wantedComps = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
+imgWriteEnable = False
+csvWriteEnable = False
+csvMode = "a"
+imgSuffix = ".jpg"
+showPcb = False
+
 labels_map = {
     0: wantedComps[0],
     1: wantedComps[1],
@@ -33,8 +39,6 @@ labels_map = {
     17: wantedComps[17],
     18: wantedComps[18],
     19: wantedComps[19]
-
-
 }
 
 datasetPath = "pcb_wacv_2019/"
@@ -60,7 +64,7 @@ def ResizeWithAspectRatio(image, width=None, height=None, inter=cv2.INTER_AREA):
 
     return cv2.resize(image, dim, interpolation=inter)
 
-with open("pcb_wacv_2019_formatted.csv", "a") as csvFile:
+with open("pcb_wacv_2019_formatted.csv", csvMode) as csvFile:
     for folder in os.listdir(datasetPath):
         xmlPath = None
         folderPath = os.path.join(datasetPath, folder)
@@ -86,13 +90,14 @@ with open("pcb_wacv_2019_formatted.csv", "a") as csvFile:
             print(f"[WW] couldn't load image! path: {imgPath}; skip!")
             continue
         
-        showImg = img.copy()
-        # if image too large, resize with aspect ratio
-        if img.shape[0] > 1820 or img.shape[1] > 980:
-            showImg = ResizeWithAspectRatio(showImg, 1200)
-            
-        #cv2.imshow(f"PCB: {imgPath}", showImg)
-        #cv2.waitKey(0)
+        if showPcb:
+            showImg = img.copy()
+            # if image too large, resize with aspect ratio
+            if img.shape[0] > 1820 or img.shape[1] > 980:
+                showImg = ResizeWithAspectRatio(showImg, 1200)
+                
+            cv2.imshow(f"PCB: {imgPath}", showImg)
+            cv2.waitKey(0)
 
         # first six blocks are metadata
         for i in range(6,len(list(root))):
@@ -124,6 +129,9 @@ with open("pcb_wacv_2019_formatted.csv", "a") as csvFile:
             #if "jumper" in compName:
             #    compName = compName[0:9]
             #    modified = True
+            #if " " in compName:
+            #    compName = compName.replace(" ", "_")
+            #    modified = True
             if "emi filter" in compName:
                 compName = "emi_filter"
                 modified = True
@@ -141,11 +149,13 @@ with open("pcb_wacv_2019_formatted.csv", "a") as csvFile:
             except:
                 print(f"CompName: {compName} index: {index}")
             fileName = compName + str(frequency_wantedComps[index])
-            filePath = compName + "/" + fileName + ".jpg"
+            filePath = compName + "/" + fileName + imgSuffix
 
             print(f"name: {compName}; filepath: {filePath}")
-            Component = img[Ymin: Ymax, Xmin: Xmax ].copy()
-            cv2.imwrite(f'{formattedDatasetPath}{filePath}', Component)
-            csvFile.write(f"{fileName}.jpg, {index}\n")
+            if imgWriteEnable:
+                Component = img[Ymin: Ymax, Xmin: Xmax ].copy()
+                cv2.imwrite(f'{formattedDatasetPath}{filePath}', Component)
+            if csvWriteEnable:
+                csvFile.write(f"{fileName}{imgSuffix}, {index}\n")
             #cv2.imshow("Component", Component)
             #cv2.waitKey(0)
