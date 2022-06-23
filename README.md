@@ -1,4 +1,5 @@
 # PCB-Component-Detection
-Trying to use AI to identify pcb components
 
-This is one of the engines behind **image2schematic**.
+**PCB-CD** is one of the engines that in the future will power **image2schematic**: https://github.com/s39674/Image2schematic. You can also use it as a standalone tool to identify pcb components.
+
+Any help is greatly appreciated!
