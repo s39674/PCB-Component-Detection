@@ -1,12 +1,12 @@
 # PCB-Component-Detection
 
-**PCB-CD** is one of the engines that in the future will power **image2schematic**: https://github.com/s39674/Image2schematic. You can also use it as a standalone tool to identify pcb components.
+**PCB-CD** is one of the engines that in the future will power **image2schematic**: https://github.com/s39674/Image2schematic. You can also use it as a standalone tool to identify pcb components. Any help is greatly appreciated!
 
 ## Testing
 
 ### training
 
-For training the model, you will need some dataset to work with. The only one I could find is the pcb_wacv_2019 dataset: https://sites.google.com/view/chiawen-kuo/home/pcb-component-detection which includes a number of PCBs labeled with their components. You can use `extract_pcb_wacv_2019.py` to extract each component to a unique folder. I have uploaded the `.csv` file but you can also get it with `extract_pcb_wacv_2019.py`. Any help is greatly appreciated!
+For training the model, you will need some dataset to work with. The only one I could find is the pcb_wacv_2019 dataset: https://sites.google.com/view/chiawen-kuo/home/pcb-component-detection which includes a number of PCBs labeled with their components. You can use `extract_pcb_wacv_2019.py` to extract each component to a unique folder. I have uploaded the `.csv` file but you can also get it with `extract_pcb_wacv_2019.py`.
 
 `extract_pcb_wacv_2019.py` assumes you have this folder structure:
 (there is a one-liner to create all of this below)
