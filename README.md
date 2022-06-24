@@ -6,10 +6,10 @@
 
 ### training
 
-For training the model, you will need some dataset to work with. The only one I could find is the pcb_wacv_2019 dataset: https://sites.google.com/view/chiawen-kuo/home/pcb-component-detection which include a number of PCBs labled with their components. You can use `extract_pcb_wacv_2019.py` to extract each component to a unique folder. I have uploaded the `.csv` file but you can also get it with `extract_pcb_wacv_2019.py`. Any help is greatly appreciated!
+For training the model, you will need some dataset to work with. The only one I could find is the pcb_wacv_2019 dataset: https://sites.google.com/view/chiawen-kuo/home/pcb-component-detection which includes a number of PCBs labeled with their components. You can use `extract_pcb_wacv_2019.py` to extract each component to a unique folder. I have uploaded the `.csv` file but you can also get it with `extract_pcb_wacv_2019.py`. Any help is greatly appreciated!
 
 `extract_pcb_wacv_2019.py` assumes you have this folder structure:
-(there is a one liner to create all of this below)
+(there is a one-liner to create all of this below)
 ```bash
 |-- pcb_wacv_2019_formatted
 |   |-- battery
