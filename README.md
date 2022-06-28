@@ -48,4 +48,4 @@ one-liner:
 mkdir pcb_wacv_2019_formatted && cd pcb_wacv_2019_formatted/ && mkdir battery button buzzer capacitor clock connector diode display emi_filter ferrite_bead fuse heatsink ic inductor jumper led potentiometer resistor transformer transistor
 ```
 
-Now set `imgWriteEnable = True` in `extract_pcb_wacv_2019.py` and run it. You should see all of the components in their respective folder. You could now run `train.py`, setting `training = True`. You should now see `pcbComponent_net.pth` model that can be used to predict new samples.
+Now set `imgWriteEnable = True` in `extract_pcb_wacv_2019.py` and run it. You should see all of the components in their respective folder. You could now run `train.py`, setting `training = True`. You should now see `pcbComponent_net.pth` Neural Network model that can be used to predict new samples with `predict.py`, just set `img_path` to your image.

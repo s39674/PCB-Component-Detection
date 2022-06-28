@@ -20,6 +20,8 @@ image_dir = "pcb_wacv_2019_formatted/"
 csv_file = "pcb_wacv_2019_formatted.csv"
 saveModelTo = './pcbComponent_net.pth'
 training = False
+epochs = 5
+
 
 wantedComps = ["resistor", "capacitor", "inductor", "diode", "led", "ic", "transistor", "connector", "jumper", "emi_filter",  "button", "clock", "transformer", "potentiometer", "heatsink", "fuse", "ferrite_bead", "buzzer", "display", "battery"]
 labels_map = {
@@ -46,7 +48,7 @@ labels_map = {
 }
 
 
-class PCBcomponentDetection(Dataset):
+class pcb_wacv_2019_formatted(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
         self.img_labels = pd.read_csv(annotations_file)
         self.img_dir = img_dir
@@ -77,13 +79,12 @@ transform_img = transforms.Compose([
                             transforms.ToPILImage(),
                             transforms.RandomResizedCrop(size=(32,32), scale=(0.8,1)),
                             transforms.RandomRotation((0,180)),
-                            #transforms.CenterCrop(256),
-                            #transforms.RandomCrop(64) ,
                             transforms.ToTensor()
 ])
 
-training_data = PCBcomponentDetection(csv_file, image_dir, transform=transform_img)
+training_data = pcb_wacv_2019_formatted(csv_file, image_dir, transform=transform_img)
 
+# spliting the data to training and testing with ratio 20% : 80%
 train_size = int(0.8 * len(training_data))
 test_size = len(training_data) - train_size
 
@@ -107,55 +108,99 @@ print(f"Using {device} device")
 class NeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
+        # expects a 3 color 32x32 image
+        
+        # arg1 - input channels - 3 colors; arg2 - output features - learn 6 features; arg3 - kernal size; 
+        # because it's a 5x5 kernal and wer'e scanning a 32x32 image, there is just 28 valid positions. (as there is a 2px shift on either end, see this: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d)
+        # ouput - 6x28x28; the 6 is the number of features
         self.conv1 = nn.Conv2d(3, 6, 5)
+        
+        # max pooling layer takes features near each other in the activation map and groups them together.
+        # It does this by reducing the tensor, merging every 2x2 (arg1,arg2) group of cells in the output into a single cell, and assigning that cell the maximum value of the 4 cells that went into it.
+        # This gives us a lower-resolution version of the activation map, with dimensions 6x14x14. (again 6 is number of features)
         self.pool = nn.MaxPool2d(2, 2)
+        
+        # arg1 - input channels, as the previous layer outputs a 6 features, thats the number of input features to this layer
+        # arg2 - output features - (learn 16 features); arg3 - kernal size;
+        # because it's a 5x5 kernal and wer'e scanning a 14x14 image, there is just 10 vaild positions.
+        # output - 6x10x10 
         self.conv2 = nn.Conv2d(6, 16, 5)
+        
+        # here there is another call to MaxPool2d(2,2) which merge every 2x2 (arg1,arg2) group of cells in the output into a single cell
+        # This gives us a lower-resolution version of the activation map, with dimensions 16x5x5 (output). (again 16 is number of features)
+
+        # as explained above, the output from self.conv2 after MaxPool2d is a 16x5x5 image, that's the input of the first linear layer.
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
         self.fc2 = nn.Linear(120, 84)
+
+        # the output is 20 as that's the number of classes we have
         self.fc3 = nn.Linear(84, 20)
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
+
+        # flatting all dimensions except batch for feeding a 1d array to the linear layers 
+        x = torch.flatten(x, 1) # see (https://pytorch.org/docs/stable/generated/torch.flatten.html)
         #x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
+
         return x
 
 model = NeuralNetwork().to(device)
 
 if training:
 
-    
+    model.load_state_dict(torch.load(saveModelTo))
 
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
 
-    for epoch in range(2):  # loop over the dataset multiple times
+    def train(dataloader, model, loss_fn, optimizer):
+        size = len(dataloader.dataset)
+        # activates training mode
+        model.train()
+        for batch, (X, y) in enumerate(dataloader):
+            X, y = X.to(device), y.to(device)
 
-        running_loss = 0.0
-        for i, data in enumerate(train_dataloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
-            inputs, labels = inputs.cuda(), labels.cuda()
-            # zero the parameter gradients
+            # Compute prediction error
+            pred = model(X)
+            loss = loss_fn(pred, y)
+
+            # Backpropagation
             optimizer.zero_grad()
-
-            # forward + backward + optimize
-            outputs = model(inputs)
-            loss = loss_fn(outputs, labels)
             loss.backward()
             optimizer.step()
 
-            # print statistics
-            running_loss += loss.item()
-            if i % 20 == 19:    # print every 2000 mini-batches
-                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 20:.3f}')
-                running_loss = 0.0
+            if batch % 100 == 0:
+                loss, current = loss.item(), batch * len(X)
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
-    print('Finished Training')
+    def test(dataloader, model, loss_fn):
+        size = len(dataloader.dataset)
+        num_batches = len(dataloader)
+        # activates testing mode
+        model.eval()
+        test_loss, correct = 0, 0
+        with torch.no_grad():
+            for X, y in dataloader:
+                X, y = X.to(device), y.to(device)
+                pred = model(X)
+                test_loss += loss_fn(pred, y).item()
+                correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+        test_loss /= num_batches
+        correct /= size
+        print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
+    
+    for t in range(epochs):
+        print(f"Epoch {t+1}\n-------------------------------")
+        train(train_dataloader, model, loss_fn, optimizer)
+        test(test_dataloader, model, loss_fn)
+    print("Done!")
+
     torch.save(model.state_dict(), saveModelTo)
 
     
@@ -163,7 +208,7 @@ if training:
 else:
     # loading the model
     model.load_state_dict(torch.load(saveModelTo))
-
+    model.eval()
     def imshow(img):
         #img = img / 2 + 0.5     # unnormalize
         #npimg = img.cpu().numpy()
@@ -192,64 +237,7 @@ else:
 
 
 """
-def train(dataloader, model, loss_fn, optimizer):
-    size = len(dataloader.dataset)
-    model.train()
-    for batch, (X, y) in enumerate(dataloader):
-        X, y = X.to(device), y.to(device)
-
-        # Compute prediction error
-        pred = model(X)
-        loss = loss_fn(pred, y)
-
-        # Backpropagation
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        if batch % 100 == 0:
-            loss, current = loss.item(), batch * len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-
-def test(dataloader, model, loss_fn):
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
-    model.eval()
-    test_loss, correct = 0, 0
-    with torch.no_grad():
-        for X, y in dataloader:
-            X, y = X.to(device), y.to(device)
-            pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-    test_loss /= num_batches
-    correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-
-
-epochs = 5
-for t in range(epochs):
-    print(f"Epoch {t+1}\n-------------------------------")
-    train(train_dataloader, model, loss_fn, optimizer)
-    test(test_dataloader, model, loss_fn)
-print("Done!")
-
-torch.save(model.state_dict(), "1test.pth")
-print("Saved PyTorch Model State to 1test.pth")
-
-
-train_features, train_labels = next(iter(train_dataloader))
-
-img = train_features[0].squeeze()
-img = img.permute(1,2,0)
-label = train_labels[0]
-plt.imshow(img)
-plt.title(labels_map[label])
-plt.show()
-
-sys.exit(0)
-
+# for future
 
 cols, rows = 8,8
 for train_features, train_labels in enumerate(train_dataloader):
@@ -263,91 +251,6 @@ for train_features, train_labels in enumerate(train_dataloader):
         plt.imshow(img)
     plt.show()
     plt.waitforbuttonpress()
-
-
-
-figure = plt.figure(figsize=(16, 16))
-cols, rows = 8, 8
-for i in range(1, cols * rows + 1):
-    sample_idx = torch.randint(len(train_dataloader), size=(1,)).item()
-    img, label = train_dataloader[sample_idx]
-    #cv2.imshow("test", img.permute(1, 2, 0))
-    #cv2.waitKey(0)
-    #img = img.permute(1,2,0)
-    figure.add_subplot(rows, cols, i)
-    plt.title(labels_map[label])
-    plt.axis("off")
-    #plt.imshow(img.squeeze())
-    plt.imshow(img)
-plt.show()
-
-fig = plt.figure()
-
-for i in range(len(training_data)):
-    sample = training_data[i]
-
-    print(i, sample['image'].shape, sample['landmarks'].shape)
-
-    ax = plt.subplot(1, 4, i + 1)
-    plt.tight_layout()
-    ax.set_title('Sample #{}'.format(i))
-    ax.axis('off')
-    show_landmarks(**sample)
-
-    if i == 3:
-        plt.show()
-        break
-
-
-# Download test data from open datasets.
-test_data = datasets.FashionMNIST(
-    root="data",
-    train=False,
-    download=True,
-    transform=ToTensor(),
-)
-
-
-# Define model
-class NeuralNetwork(nn.Module):
-    def __init__(self):
-        super(NeuralNetwork, self).__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28*28, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 10)
-        )
-
-    def forward(self, x):
-        x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
-
-model = NeuralNetwork()
-model.load_state_dict(torch.load("model.pth"))
-
-classes = [
-    "T-shirt/top",
-    "Trouser",
-    "Pullover",
-    "Dress",
-    "Coat",
-    "Sandal",
-    "Shirt",
-    "Sneaker",
-    "Bag",
-    "Ankle boot",
-]
-
-model.eval()
-x, y = test_data[0][0], test_data[0][1]
-with torch.no_grad():
-    pred = model(x)
-    predicted, actual = classes[pred[0].argmax(0)], classes[y]
-    print(f'Predicted: "{predicted}", Actual: "{actual}"')
 
 
 """
