@@ -137,12 +137,15 @@ class NeuralNetwork(nn.Module):
         self.fc3 = nn.Linear(84, 20)
 
     def forward(self, x):
+        # Conv layers. expect the shape to be [B, C, H, W]
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
 
         # flatting all dimensions except batch for feeding a 1d array to the linear layers 
         x = torch.flatten(x, 1) # see (https://pytorch.org/docs/stable/generated/torch.flatten.html)
         #x = x.view(x.size(0), -1)
+
+        # linear layers
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
