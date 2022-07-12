@@ -1,4 +1,6 @@
+import csv
 import os
+import sys
 import torch
 from torch import nn
 from torchvision import transforms
@@ -7,9 +9,18 @@ import numpy as np
 from torchvision.io import read_image
 import torch.nn.functional as F
 
-# OPTIONS
+# OPTIONS - NOTE: some paths here are just for example
 modelPath = './pcbComponent_net.pth'
-img_path = ""
+img_path = "/pcb_wacv_2019_formatted/capacitor/capacitor5.jpg"
+# This option is useful when you have multiple regions inside an image that you want the program to predict.
+# This requires specifying the image to use (like a pcb) and the roi to run the prediction
+# inside a csv with this format: x,y,x+w,y+h 
+multipleImagesUsingCSV = True
+CSV_path = "Image2schematic/output/Files/BOM.csv"
+pcbImageForCSVprediction_path = "pcb_wacv_2019/RPI3B_Bottom/RPI3B_Bottom.jpg"
+if multipleImagesUsingCSV:
+    import pandas as pd
+    import cv2
 
 wantedComps = ["resistor", "capacitor", "inductor", "diode", "led", "ic", "transistor", "connector", "jumper", "emi_filter",  "button", "clock", "transformer", "potentiometer", "heatsink", "fuse", "ferrite_bead", "buzzer", "display", "battery"]
 labels_map = {
@@ -101,23 +112,57 @@ with torch.no_grad():
     model.load_state_dict(torch.load(modelPath))
     model.eval()
     print(model)
-    image = read_image(img_path)
-    image = transform_img(image).to(device)
-    print(f"image shape: {image.shape}")
-    """
-    img = image.permute((1,2,0))
-    plt.title("Transformed image")
-    plt.imshow(img.cpu())
-    plt.show()"""
+    
+    if multipleImagesUsingCSV:
+        csvFile = pd.read_csv(CSV_path, names=["point1_x", "point1_y", "point2_x", "point2_y"])
+        pcbImage = cv2.imread(pcbImageForCSVprediction_path)
+        
+        if csvFile is None or pcbImage is None:
+            sys.exit("Couldn't load image or csv file!")
+
+        # Cropping background
+        #   x, y      x    y
+        region = [[245,140], [1405,880]]
+        pcbImage = pcbImage[region[0][1] : region[1][1] , region[0][0] : region[1][0]]
+
+        for i, row in csvFile.iterrows():
+            point1_x = row['point1_x']
+            point1_y = row['point1_y']
+            point2_x = row['point2_x']
+            point2_y = row['point2_y']
+
+            # cropping ROI from image
+            component = pcbImage[point1_y: point2_y, point1_x: point2_x]
+            component = transform_img(component).to(device)
+
+            prediction = model(component)
+            predicted_class = np.argmax(prediction.cpu())
+            finalPrediction = labels_map[predicted_class.item()]
+
+            cv2.rectangle(pcbImage, (point1_x, point1_y), (point2_x, point2_y), (0,0,255), 2)
+            cv2.putText(pcbImage, finalPrediction, (point1_x-5,point1_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
+
+        cv2.imshow("result", pcbImage)
+        cv2.waitKey(0)
+
+    else:
+        image = read_image(img_path)
+        image = transform_img(image).to(device)
+        print(f"image shape: {image.shape}")
+        """
+        img = image.permute((1,2,0))
+        plt.title("Transformed image")
+        plt.imshow(img.cpu())
+        plt.show()"""
 
 
-    prediction = model(image)
-    predicted_class = np.argmax(prediction.cpu())
-    
-    # Reshape image
-    #image = image.reshape(28, 28, 1)
-    
-    # Show result
-    plt.imshow(image.cpu().permute((1,2,0)))
-    plt.title(f"PREDICTED OUTPUT: {labels_map[predicted_class.item()]}")
-    plt.show()
+        prediction = model(image)
+        predicted_class = np.argmax(prediction.cpu())
+        
+        # Reshape image
+        #image = image.reshape(28, 28, 1)
+        
+        # Show result
+        plt.imshow(image.cpu().permute((1,2,0)))
+        plt.title(f"PREDICTED OUTPUT: {labels_map[predicted_class.item()]}")
+        plt.show()
