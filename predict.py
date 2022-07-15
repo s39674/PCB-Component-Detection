@@ -1,11 +1,9 @@
-import csv
-import os
+#import os
 import sys
 import torch
 from torch import nn
 from torchvision import transforms
-import matplotlib.pyplot as plt
-import numpy as np
+#import numpy as np
 from torchvision.io import read_image
 import torch.nn.functional as F
 
@@ -21,6 +19,11 @@ pcbImageForCSVprediction_path = "pcb_wacv_2019/RPI3B_Bottom/RPI3B_Bottom.jpg"
 if multipleImagesUsingCSV:
     import pandas as pd
     import cv2
+else:
+    import matplotlib.pyplot as plt
+
+# All predictions below this threshold are ignored.
+confidenceThreshold = 0.52
 
 wantedComps = ["resistor", "capacitor", "inductor", "diode", "led", "ic", "transistor", "connector", "jumper", "emi_filter",  "button", "clock", "transformer", "potentiometer", "heatsink", "fuse", "ferrite_bead", "buzzer", "display", "battery"]
 labels_map = {
@@ -107,42 +110,70 @@ transform_img = transforms.Compose([
 
 
 with torch.no_grad():
-
+    # Loading model
     model = NeuralNetwork().to(device)
     model.load_state_dict(torch.load(modelPath))
+    # Only for prediction mode
     model.eval()
     print(model)
     
     if multipleImagesUsingCSV:
         csvFile = pd.read_csv(CSV_path, names=["point1_x", "point1_y", "point2_x", "point2_y"])
         pcbImage = cv2.imread(pcbImageForCSVprediction_path)
-        
+
         if csvFile is None or pcbImage is None:
             sys.exit("Couldn't load image or csv file!")
 
-        # Cropping background
+        # Cropping background - TODO: the values shouldn't be hard coded but imported from image2schematic
         #   x, y      x    y
         region = [[245,140], [1405,880]]
         pcbImage = pcbImage[region[0][1] : region[1][1] , region[0][0] : region[1][0]]
+        
+        # A copy of pcbImage so I could draw on it without messing with detection
+        showPcbImage = pcbImage.copy()
 
+        validComponentsCounter = 0
         for i, row in csvFile.iterrows():
             point1_x = row['point1_x']
             point1_y = row['point1_y']
             point2_x = row['point2_x']
             point2_y = row['point2_y']
 
-            # cropping ROI from image
+            # cropping component from image
             component = pcbImage[point1_y: point2_y, point1_x: point2_x]
+            # For inspectiong every detection 
+            #cv2.imshow("result", component)
+            
+            # Transforming to fit model requirements
             component = transform_img(component).to(device)
 
             prediction = model(component)
-            predicted_class = np.argmax(prediction.cpu())
-            finalPrediction = labels_map[predicted_class.item()]
 
-            cv2.rectangle(pcbImage, (point1_x, point1_y), (point2_x, point2_y), (0,0,255), 2)
-            cv2.putText(pcbImage, finalPrediction, (point1_x-5,point1_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
+            # Getting prediction and confidence score
+            probs = torch.nn.functional.softmax(prediction, dim=-1)
+            conf, classes = torch.max(probs, -1)
+            if conf < confidenceThreshold: continue
 
-        cv2.imshow("result", pcbImage)
+            # another way
+            #predicted_class = np.argmax(prediction.cpu())
+            
+
+            #finalPrediction = labels_map[classes.item()]
+            #print(finalPrediction, conf)
+            #cv2.waitKey(0)
+
+            validComponentsCounter += 1
+
+            color = [0,0,255]
+            # For Random color
+            #color = (list(np.random.choice(range(256), size=3)))
+            #color =[int(color[0]), int(color[1]), int(color[2])]
+            
+            cv2.rectangle(showPcbImage, (point1_x, point1_y), (point2_x, point2_y), color, 2)
+            cv2.putText(showPcbImage, str(classes.item()), (point1_x-5,point1_y), cv2.FONT_HERSHEY_DUPLEX, 0.5, color, 1)
+
+        cv2.imshow("result", showPcbImage)
+        print(f"number of valid Components: {validComponentsCounter}")
         cv2.waitKey(0)
 
     else:
@@ -157,12 +188,16 @@ with torch.no_grad():
 
 
         prediction = model(image)
-        predicted_class = np.argmax(prediction.cpu())
-        
-        # Reshape image
-        #image = image.reshape(28, 28, 1)
+
+        # Getting confidence score
+        probs = torch.nn.functional.softmax(prediction, dim=-1)
+        conf, classes = torch.max(probs, -1)
+        #print(conf, labels_map[classes.item()])
+
+        # another way
+        #predicted_class = np.argmax(prediction.cpu())
         
         # Show result
+        plt.title(f"PREDICTED OUTPUT: {labels_map[classes.item()]} CONFIDENCE: {conf:.3f}")
         plt.imshow(image.cpu().permute((1,2,0)))
-        plt.title(f"PREDICTED OUTPUT: {labels_map[predicted_class.item()]}")
         plt.show()
